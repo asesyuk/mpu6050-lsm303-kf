@@ -123,22 +123,42 @@ class SensorThread(threading.Thread):
 
 
 class EKFThread(threading.Thread):
-    """Thread for EKF processing and state estimation."""
+    """Thread for running EKF processing."""
     
     def __init__(self, data_queue: queue.Queue, state_queue: queue.Queue,
-                 ekf: InertialEKF, mag_reference: np.ndarray):
-        super().__init__(name="EKFThread", daemon=True)
+                 ekf: InertialEKF, mag_reference: np.ndarray, coordinate_frame: str = 'ned'):
+        super().__init__(daemon=True)
+        self.name = "EKFThread"
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
         self.data_queue = data_queue
         self.state_queue = state_queue
         self.ekf = ekf
         self.mag_reference = mag_reference
-        self.running = False
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.coordinate_frame = coordinate_frame.lower()
         
-        # Processing statistics
-        self.measurements_processed = 0
-        self.processing_times = []
+        self.running = False
         self.start_time = 0.0
+        self.measurements_processed = 0
+        self.total_processing_time = 0.0
+        self.processing_times = []  # Keep recent processing times for statistics
+        
+    def _transform_sensor_data(self, gyro: np.ndarray, accel: np.ndarray, mag: np.ndarray) -> tuple:
+        """Transform sensor data from ENU to NED coordinate frame if needed."""
+        if self.coordinate_frame == 'enu':
+            # ENU to NED transformation
+            # ENU: X=East, Y=North, Z=Up
+            # NED: X=North, Y=East, Z=Down
+            # Transformation: [N, E, D] = [Y, X, -Z]
+            
+            gyro_ned = np.array([gyro[1], gyro[0], -gyro[2]])    # [Y, X, -Z]
+            accel_ned = np.array([accel[1], accel[0], -accel[2]]) # [Y, X, -Z]
+            mag_ned = np.array([mag[1], mag[0], -mag[2]])         # [Y, X, -Z]
+            
+            return gyro_ned, accel_ned, mag_ned
+        else:
+            # Already in NED frame
+            return gyro, accel, mag
         
     def run(self):
         """Main EKF processing loop."""
@@ -153,37 +173,35 @@ class EKFThread(threading.Thread):
                 
                 process_start = time.time()
                 
+                # Extract sensor data
+                gyro = sensor_data['gyroscope']
+                accel_mpu = sensor_data['accelerometer_mpu']
+                mag = sensor_data['magnetometer']
+                dt = sensor_data['dt']
+                
+                # Transform coordinate frame if needed (ENU -> NED)
+                gyro, accel_mpu, mag = self._transform_sensor_data(gyro, accel_mpu, mag)
+                
                 # EKF prediction step
-                self.ekf.predict(
-                    sensor_data['gyroscope'],
-                    sensor_data['accelerometer_mpu'],
-                    sensor_data['dt']
-                )
+                self.ekf.predict(gyro, accel_mpu, dt)
                 
-                # EKF update steps (at reduced rate)
-                if self.measurements_processed % 10 == 0:  # 20 Hz updates
-                    # Gravity update using accelerometer
-                    self.ekf.update_gravity(sensor_data['accelerometer_mpu'])
-                    
-                    # Magnetometer update
-                    self.ekf.update_magnetometer(sensor_data['magnetometer'], self.mag_reference)
+                # EKF updates (run at lower frequency)
+                if self.measurements_processed % 5 == 0:  # ~40 Hz updates if sensor is 200 Hz
+                    self.ekf.update_gravity(accel_mpu)
+                    if mag is not None:
+                        self.ekf.update_magnetometer(mag, self.mag_reference)
                 
-                # Zero velocity update
-                zupt_applied = self.ekf.update_zupt(
-                    sensor_data['accelerometer_mpu'],
-                    sensor_data['gyroscope']
-                )
+                # Zero velocity update (ZUPT)
+                self.ekf.update_zupt(accel_mpu, gyro)
                 
-                # Get current state
+                # Get current state and add to output queue
                 state_dict = self.ekf.get_state_dict()
-                state_dict['sensor_data'] = sensor_data
-                state_dict['zupt_applied'] = zupt_applied
+                state_dict['sensor_timestamp'] = sensor_data['timestamp']
                 
-                # Send to state queue
                 try:
                     self.state_queue.put_nowait(state_dict)
                 except queue.Full:
-                    # Replace oldest state if queue is full
+                    # Remove oldest state if queue is full
                     try:
                         self.state_queue.get_nowait()
                         self.state_queue.put_nowait(state_dict)
@@ -192,6 +210,7 @@ class EKFThread(threading.Thread):
                 
                 # Track processing time
                 process_time = time.time() - process_start
+                self.total_processing_time += process_time
                 self.processing_times.append(process_time)
                 
                 # Keep only recent processing times (for statistics)
@@ -219,7 +238,7 @@ class EKFThread(threading.Thread):
         runtime = time.time() - self.start_time if self.start_time > 0 else 0
         avg_rate = self.measurements_processed / runtime if runtime > 0 else 0
         
-        if self.processing_times:
+        if self.total_processing_time:
             avg_process_time = np.mean(self.processing_times)
             max_process_time = np.max(self.processing_times)
             cpu_usage = avg_process_time * avg_rate * 100  # Approximate CPU usage %
@@ -583,7 +602,8 @@ class INSApplication:
             
             self.ekf_thread = EKFThread(
                 self.sensor_queue, self.state_queue, self.ekf,
-                np.array(self.config['magnetic_reference'])  # NED frame
+                np.array(self.config['magnetic_reference']),
+                self.config['coordinate_frame']
             )
             
             # Initialize data logger
@@ -809,6 +829,7 @@ def create_default_config() -> Dict[str, Any]:
         # Display options
         'show_attitude': False,
         'zupt_relaxed': False,
+        'coordinate_frame': 'ned',  # 'ned' or 'enu'
         
         # Networking
         'enable_networking': True,
@@ -852,6 +873,8 @@ def main():
                        help='Display roll/pitch/yaw at every EKF iteration')
     parser.add_argument('--zupt-relaxed', action='store_true',
                        help='Use relaxed ZUPT thresholds for noisy/uncalibrated sensors')
+    parser.add_argument('--coordinate-frame', choices=['ned', 'enu'], default='ned',
+                       help='IMU coordinate frame: ned (North-East-Down) or enu (East-North-Up)')
     parser.add_argument('--tcp-port', type=int, default=8888,
                        help='TCP port for state publishing')
     parser.add_argument('--websocket-port', type=int, default=8889,
@@ -895,6 +918,8 @@ def main():
         config['show_attitude'] = True
     if args.zupt_relaxed:
         config['zupt_relaxed'] = True
+    if args.coordinate_frame:
+        config['coordinate_frame'] = args.coordinate_frame
     
     config['sample_rate'] = args.sample_rate
     config['tcp_port'] = args.tcp_port

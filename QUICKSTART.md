@@ -67,6 +67,9 @@ python3 main.py --show-attitude
 # Reduce drift with relaxed ZUPT (for uncalibrated/noisy sensors)
 python3 main.py --zupt-relaxed --show-attitude
 
+# For ENU coordinate frame (X=East, Y=North, Z=Up)
+python3 main.py --coordinate-frame enu --show-attitude
+
 # Disable networking
 python3 main.py --no-network
 ```
