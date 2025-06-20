@@ -151,6 +151,9 @@ python3 main.py
 # With custom configuration
 python3 main.py --calibration my_calibration.json --log navigation_data.csv
 
+# Real-time attitude display (shows roll/pitch/yaw at every EKF iteration)
+python3 main.py --show-attitude --sample-rate 100
+
 # Simulation mode (for testing without hardware)
 python3 main.py --simulation
 ```
@@ -224,6 +227,7 @@ Options:
   --sample-rate HZ        Sensor sample rate (default: 200)
   --simulation            Run in simulation mode
   --no-network           Disable network publishing
+  --show-attitude        Display roll/pitch/yaw at every EKF iteration
   --tcp-port PORT        TCP port for state publishing (default: 8888)
   --websocket-port PORT  WebSocket port (default: 8889)
   --log-level LEVEL      Logging level (DEBUG/INFO/WARNING/ERROR)

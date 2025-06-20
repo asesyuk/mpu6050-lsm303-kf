@@ -61,6 +61,9 @@ python3 main.py --log flight_data.csv
 # Custom sample rate
 python3 main.py --sample-rate 100
 
+# Display real-time attitude (roll/pitch/yaw at every EKF iteration)
+python3 main.py --show-attitude
+
 # Disable networking
 python3 main.py --no-network
 ```

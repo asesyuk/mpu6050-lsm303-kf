@@ -647,6 +647,12 @@ class INSApplication:
                 # Get processed state
                 state_dict = self.state_queue.get(timeout=1.0)
                 
+                # Display real-time attitude if enabled
+                if self.config.get('show_attitude', False):
+                    euler = state_dict['euler_deg']
+                    timestamp = state_dict['timestamp']
+                    print(f"[{timestamp:.3f}] Roll: {euler[0]:6.2f}°  Pitch: {euler[1]:6.2f}°  Yaw: {euler[2]:6.2f}°")
+                
                 # Log to CSV
                 if self.data_logger:
                     self.data_logger.log_state(state_dict)
@@ -660,7 +666,8 @@ class INSApplication:
                 # Print periodic statistics
                 current_time = time.time()
                 if current_time - last_stats_time > 10.0:  # Every 10 seconds
-                    self._print_statistics()
+                    if not self.config.get('show_attitude', False):  # Only show stats if not showing attitude
+                        self._print_statistics()
                     last_stats_time = current_time
                 
                 # Mark task as done
@@ -792,6 +799,9 @@ def create_default_config() -> Dict[str, Any]:
         'log_file': None,
         'log_raw_sensors': True,
         
+        # Display options
+        'show_attitude': False,
+        
         # Networking
         'enable_networking': True,
         'tcp_port': 8888,
@@ -830,6 +840,8 @@ def main():
                        help='Run in simulation mode')
     parser.add_argument('--no-network', action='store_true',
                        help='Disable network publishing')
+    parser.add_argument('--show-attitude', action='store_true',
+                       help='Display roll/pitch/yaw at every EKF iteration')
     parser.add_argument('--tcp-port', type=int, default=8888,
                        help='TCP port for state publishing')
     parser.add_argument('--websocket-port', type=int, default=8889,
@@ -869,6 +881,8 @@ def main():
         config['simulation_mode'] = True
     if args.no_network:
         config['enable_networking'] = False
+    if args.show_attitude:
+        config['show_attitude'] = True
     
     config['sample_rate'] = args.sample_rate
     config['tcp_port'] = args.tcp_port
