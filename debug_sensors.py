@@ -21,7 +21,7 @@ def test_raw_sensors():
         # Collect samples
         samples = []
         for i in range(100):
-            data = sensor_mgr.read_sensors()
+            data = sensor_mgr.read_all()
             if data:
                 samples.append(data)
                 
