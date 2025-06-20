@@ -154,6 +154,9 @@ python3 main.py --calibration my_calibration.json --log navigation_data.csv
 # Real-time attitude display (shows roll/pitch/yaw at every EKF iteration)
 python3 main.py --show-attitude --sample-rate 100
 
+# Reduce drift with relaxed ZUPT thresholds (for uncalibrated sensors)
+python3 main.py --zupt-relaxed --show-attitude
+
 # Simulation mode (for testing without hardware)
 python3 main.py --simulation
 ```
@@ -228,6 +231,7 @@ Options:
   --simulation            Run in simulation mode
   --no-network           Disable network publishing
   --show-attitude        Display roll/pitch/yaw at every EKF iteration
+  --zupt-relaxed         Use relaxed ZUPT thresholds for noisy/uncalibrated sensors
   --tcp-port PORT        TCP port for state publishing (default: 8888)
   --websocket-port PORT  WebSocket port (default: 8889)
   --log-level LEVEL      Logging level (DEBUG/INFO/WARNING/ERROR)

@@ -555,6 +555,13 @@ class INSApplication:
             # Initialize EKF
             self.ekf = InertialEKF()
             
+            # Apply relaxed ZUPT thresholds if requested (for uncalibrated sensors)
+            if self.config.get('zupt_relaxed', False):
+                self.ekf.zupt_acceleration_threshold = 2.0     # Default: 0.5 m/s²
+                self.ekf.zupt_angular_rate_threshold = 0.2     # Default: 0.05 rad/s
+                self.ekf.zupt_velocity_threshold = 0.5         # Default: 0.1 m/s
+                self.logger.info("Applied relaxed ZUPT thresholds for noisy/uncalibrated sensors")
+            
             # Set EKF noise parameters from config
             self.ekf.set_noise_parameters(
                 gyro_noise=self.config.get('gyro_noise_density', 1e-4),
@@ -801,6 +808,7 @@ def create_default_config() -> Dict[str, Any]:
         
         # Display options
         'show_attitude': False,
+        'zupt_relaxed': False,
         
         # Networking
         'enable_networking': True,
@@ -842,6 +850,8 @@ def main():
                        help='Disable network publishing')
     parser.add_argument('--show-attitude', action='store_true',
                        help='Display roll/pitch/yaw at every EKF iteration')
+    parser.add_argument('--zupt-relaxed', action='store_true',
+                       help='Use relaxed ZUPT thresholds for noisy/uncalibrated sensors')
     parser.add_argument('--tcp-port', type=int, default=8888,
                        help='TCP port for state publishing')
     parser.add_argument('--websocket-port', type=int, default=8889,
@@ -883,6 +893,8 @@ def main():
         config['enable_networking'] = False
     if args.show_attitude:
         config['show_attitude'] = True
+    if args.zupt_relaxed:
+        config['zupt_relaxed'] = True
     
     config['sample_rate'] = args.sample_rate
     config['tcp_port'] = args.tcp_port

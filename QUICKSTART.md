@@ -64,6 +64,9 @@ python3 main.py --sample-rate 100
 # Display real-time attitude (roll/pitch/yaw at every EKF iteration)
 python3 main.py --show-attitude
 
+# Reduce drift with relaxed ZUPT (for uncalibrated/noisy sensors)
+python3 main.py --zupt-relaxed --show-attitude
+
 # Disable networking
 python3 main.py --no-network
 ```
