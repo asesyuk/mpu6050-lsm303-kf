@@ -406,16 +406,22 @@ class StatePublisher:
                 self.logger.info(f"WebSocket client disconnected: {websocket.remote_address}")
         
         def start_server():
+            # Create new event loop for this thread
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            self.websocket_server = websockets.serve(
-                websocket_handler, '0.0.0.0', self.websocket_port
-            )
-            
-            loop.run_until_complete(self.websocket_server)
-            self.logger.info(f"WebSocket server listening on port {self.websocket_port}")
-            loop.run_forever()
+            try:
+                self.websocket_server = websockets.serve(
+                    websocket_handler, '0.0.0.0', self.websocket_port
+                )
+                
+                loop.run_until_complete(self.websocket_server)
+                self.logger.info(f"WebSocket server listening on port {self.websocket_port}")
+                loop.run_forever()
+            except Exception as e:
+                self.logger.error(f"WebSocket server error: {e}")
+            finally:
+                loop.close()
         
         # Start WebSocket server in separate thread
         threading.Thread(target=start_server, daemon=True).start()
