@@ -163,35 +163,38 @@ class InertialEKF:
     """
     
     def __init__(self, initial_state: Optional[EKFState] = None):
+        """Initialize EKF with default or provided initial state."""
         self.logger = logging.getLogger(self.__class__.__name__)
         
-        # Initialize state
-        if initial_state is None:
-            self.state = self._create_initial_state()
-        else:
-            self.state = initial_state
+        # State
+        self.state = initial_state if initial_state else self._create_initial_state()
         
         # Process noise parameters
-        self.gyro_noise_density = DEFAULT_GYRO_NOISE_DENSITY
-        self.accel_noise_density = DEFAULT_ACCEL_NOISE_DENSITY
-        self.gyro_bias_stability = DEFAULT_GYRO_BIAS_STABILITY
-        self.accel_bias_stability = DEFAULT_ACCEL_BIAS_STABILITY
+        self.gyro_noise_density = 1e-4    # [rad/s/√Hz]
+        self.accel_noise_density = 1e-3   # [m/s²/√Hz]
+        self.gyro_bias_stability = 1e-6   # [rad/s²/√Hz] 
+        self.accel_bias_stability = 1e-5  # [m/s³/√Hz]
         
         # Measurement noise parameters
-        self.accel_gravity_noise = DEFAULT_ACCEL_GRAVITY_NOISE
-        self.mag_noise = DEFAULT_MAG_NOISE
+        self.accel_gravity_noise = 0.5     # [m/s²]
+        self.mag_noise = 1e-5              # [Tesla]
+        self.zupt_noise = 0.01             # [m/s]
         
         # ZUPT parameters
         self.zupt_enabled = True
-        self.zupt_velocity_threshold = 0.1  # m/s
-        self.zupt_acceleration_threshold = 0.5  # m/s²
-        self.zupt_angular_rate_threshold = 0.05  # rad/s
-        self.zupt_noise = 0.01  # m/s
+        self.zupt_acceleration_threshold = 0.5   # [m/s²]
+        self.zupt_angular_rate_threshold = 0.05  # [rad/s]
+        self.zupt_velocity_threshold = 0.1       # [m/s]
         
-        # Statistics
+        # Performance counters
         self.prediction_count = 0
         self.update_count = 0
         self.zupt_count = 0
+        
+        # Diagnostic information
+        self.last_zupt_active = False
+        self.last_accel_magnitude = 0.0
+        self.last_gyro_magnitude = 0.0
         
         self.logger.info("InertialEKF initialized")
     
@@ -464,12 +467,19 @@ class InertialEKF:
             True if ZUPT was applied
         """
         if not self.zupt_enabled:
+            self.last_zupt_active = False
+            self.last_accel_magnitude = np.linalg.norm(accel)
+            self.last_gyro_magnitude = np.linalg.norm(gyro)
             return False
         
         # Check if vehicle is stationary
         accel_magnitude = np.linalg.norm(accel)
         gyro_magnitude = np.linalg.norm(gyro)
         velocity_magnitude = np.linalg.norm(self.state.velocity_ned)
+        
+        # Store for diagnostics
+        self.last_accel_magnitude = accel_magnitude
+        self.last_gyro_magnitude = gyro_magnitude
         
         # Stationary detection criteria
         accel_stationary = abs(accel_magnitude - GRAVITY) < self.zupt_acceleration_threshold
@@ -491,8 +501,10 @@ class InertialEKF:
             self._kalman_update(innovation, H, R)
             self.zupt_count += 1
             
+            self.last_zupt_active = True
             return True
         
+        self.last_zupt_active = False
         return False
     
     def _kalman_update(self, innovation: np.ndarray, H: np.ndarray, R: np.ndarray) -> None:
@@ -556,6 +568,10 @@ class InertialEKF:
         """Get current state as dictionary for logging/networking."""
         euler = self.get_attitude_euler()
         
+        # Extract attitude uncertainties from covariance matrix (diagonal elements)
+        attitude_variance = np.diag(self.state.covariance[0:3, 0:3])
+        attitude_uncertainty = np.sqrt(attitude_variance)  # Standard deviation
+        
         return {
             'timestamp': self.state.timestamp,
             'quaternion': self.state.quaternion.tolist(),
@@ -565,12 +581,16 @@ class InertialEKF:
             'position_ned': self.state.position_ned.tolist(),
             'gyro_bias': self.state.gyro_bias.tolist(),
             'accel_bias': self.state.accel_bias.tolist(),
+            'attitude_uncertainty': attitude_uncertainty.tolist(),
             'covariance_trace': np.trace(self.state.covariance),
             'statistics': {
                 'predictions': self.prediction_count,
                 'updates': self.update_count,
                 'zupts': self.zupt_count
-            }
+            },
+            'zupt_active': self.last_zupt_active,
+            'accel_magnitude': self.last_accel_magnitude,
+            'gyro_magnitude': self.last_gyro_magnitude
         }
     
     def reset_statistics(self) -> None:

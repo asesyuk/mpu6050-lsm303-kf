@@ -70,6 +70,12 @@ python3 main.py --zupt-relaxed --show-attitude
 # For ENU coordinate frame (X=East, Y=North, Z=Up)
 python3 main.py --coordinate-frame enu --show-attitude
 
+# Troubleshoot drift with full diagnostics
+python3 main.py --coordinate-frame enu --zupt-relaxed --diagnostic --show-attitude
+
+# Aggressive tuning for calibrated sensors
+python3 main.py --coordinate-frame enu --aggressive-zupt --fast-convergence --show-attitude
+
 # Disable networking
 python3 main.py --no-network
 ```

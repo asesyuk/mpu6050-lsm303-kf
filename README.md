@@ -160,6 +160,12 @@ python3 main.py --zupt-relaxed --show-attitude
 # For ENU coordinate frame IMUs (X=East, Y=North, Z=Up)
 python3 main.py --coordinate-frame enu --show-attitude
 
+# Comprehensive drift troubleshooting with diagnostics
+python3 main.py --coordinate-frame enu --zupt-relaxed --show-attitude --diagnostic
+
+# Aggressive tuning for minimal drift (after calibration)
+python3 main.py --coordinate-frame enu --aggressive-zupt --fast-convergence --show-attitude
+
 # Simulation mode (for testing without hardware)
 python3 main.py --simulation
 ```
@@ -236,6 +242,9 @@ Options:
   --show-attitude        Display roll/pitch/yaw at every EKF iteration
   --zupt-relaxed         Use relaxed ZUPT thresholds for noisy/uncalibrated sensors
   --coordinate-frame {ned,enu}  IMU coordinate frame: ned (North-East-Down) or enu (East-North-Up)
+  --diagnostic           Show detailed diagnostics: bias estimates, covariance, ZUPT detection
+  --aggressive-zupt      Use more aggressive ZUPT detection for better drift reduction
+  --fast-convergence     Enable faster bias convergence (higher process noise)
   --tcp-port PORT        TCP port for state publishing (default: 8888)
   --websocket-port PORT  WebSocket port (default: 8889)
   --log-level LEVEL      Logging level (DEBUG/INFO/WARNING/ERROR)

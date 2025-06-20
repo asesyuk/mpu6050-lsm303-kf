@@ -581,6 +581,21 @@ class INSApplication:
                 self.ekf.zupt_velocity_threshold = 0.5         # Default: 0.1 m/s
                 self.logger.info("Applied relaxed ZUPT thresholds for noisy/uncalibrated sensors")
             
+            # Apply aggressive ZUPT if requested (for better drift reduction)
+            if self.config.get('aggressive_zupt', False):
+                self.ekf.zupt_acceleration_threshold = 0.2     # Default: 0.5 m/s²
+                self.ekf.zupt_angular_rate_threshold = 0.02    # Default: 0.05 rad/s
+                self.ekf.zupt_velocity_threshold = 0.05        # Default: 0.1 m/s
+                self.logger.info("Applied aggressive ZUPT thresholds for better drift reduction")
+            
+            # Apply fast convergence if requested (higher process noise for faster adaptation)
+            if self.config.get('fast_convergence', False):
+                self.ekf.gyro_bias_stability = 5e-6            # Default: 1e-6
+                self.ekf.accel_bias_stability = 5e-5           # Default: 1e-5
+                self.ekf.gyro_noise_density = 5e-4             # Default: 1e-4
+                self.ekf.accel_noise_density = 5e-3            # Default: 1e-3
+                self.logger.info("Applied fast convergence settings (higher process noise)")
+            
             # Set EKF noise parameters from config
             self.ekf.set_noise_parameters(
                 gyro_noise=self.config.get('gyro_noise_density', 1e-4),
@@ -680,6 +695,10 @@ class INSApplication:
                     timestamp = state_dict['timestamp']
                     print(f"[{timestamp:.3f}] Roll: {euler[0]:6.2f}°  Pitch: {euler[1]:6.2f}°  Yaw: {euler[2]:6.2f}°")
                 
+                # Display detailed diagnostics if enabled
+                if self.config.get('diagnostic', False):
+                    self._display_diagnostics(state_dict)
+                
                 # Log to CSV
                 if self.data_logger:
                     self.data_logger.log_state(state_dict)
@@ -704,6 +723,8 @@ class INSApplication:
                 continue  # Timeout - check if still running
             except Exception as e:
                 self.logger.error(f"Main loop error: {e}")
+        
+        self.logger.info(f"Main loop stopped after processing {state_count} states")
     
     def _print_statistics(self):
         """Print system performance statistics."""
@@ -764,6 +785,34 @@ class INSApplication:
         
         runtime = time.time() - self.start_time
         self.logger.info(f"INS application stopped after {runtime:.1f} seconds")
+    
+    def _display_diagnostics(self, state_dict):
+        """Display detailed diagnostic information."""
+        timestamp = state_dict['timestamp']
+        
+        # Get bias estimates (gyro and accel bias from EKF state)
+        gyro_bias = state_dict.get('gyro_bias', [0, 0, 0])
+        accel_bias = state_dict.get('accel_bias', [0, 0, 0])
+        
+        # Get attitude uncertainties (diagonal elements of covariance for attitude)
+        att_uncertainty = state_dict.get('attitude_uncertainty', [0, 0, 0])
+        
+        # Get ZUPT detection info
+        zupt_active = state_dict.get('zupt_active', False)
+        accel_magnitude = state_dict.get('accel_magnitude', 0)
+        gyro_magnitude = state_dict.get('gyro_magnitude', 0)
+        
+        # Display diagnostic info (every 50 samples to avoid spam)
+        sample_count = getattr(self, '_diagnostic_counter', 0)
+        if sample_count % 50 == 0:
+            print(f"\n--- DIAGNOSTICS [{timestamp:.1f}s] ---")
+            print(f"Gyro Bias (°/s): [{gyro_bias[0]*57.3:6.2f}, {gyro_bias[1]*57.3:6.2f}, {gyro_bias[2]*57.3:6.2f}]")
+            print(f"Accel Bias (m/s²): [{accel_bias[0]:6.3f}, {accel_bias[1]:6.3f}, {accel_bias[2]:6.3f}]")
+            print(f"Att Uncert (°): [{att_uncertainty[0]*57.3:6.2f}, {att_uncertainty[1]*57.3:6.2f}, {att_uncertainty[2]*57.3:6.2f}]")
+            print(f"ZUPT: {'ACTIVE' if zupt_active else 'inactive'} | Accel: {accel_magnitude:.3f} m/s² | Gyro: {gyro_magnitude*57.3:.2f} °/s")
+            print("=" * 60)
+        
+        self._diagnostic_counter = sample_count + 1
 
 
 class SimulatorThread(SensorThread):
@@ -830,6 +879,11 @@ def create_default_config() -> Dict[str, Any]:
         'show_attitude': False,
         'zupt_relaxed': False,
         'coordinate_frame': 'ned',  # 'ned' or 'enu'
+        'diagnostic': False,
+        
+        # EKF tuning parameters
+        'aggressive_zupt': False,  # More aggressive ZUPT detection
+        'fast_convergence': False,  # Faster bias convergence
         
         # Networking
         'enable_networking': True,
@@ -875,6 +929,12 @@ def main():
                        help='Use relaxed ZUPT thresholds for noisy/uncalibrated sensors')
     parser.add_argument('--coordinate-frame', choices=['ned', 'enu'], default='ned',
                        help='IMU coordinate frame: ned (North-East-Down) or enu (East-North-Up)')
+    parser.add_argument('--diagnostic', action='store_true',
+                       help='Show detailed diagnostics: bias estimates, covariance, ZUPT detection')
+    parser.add_argument('--aggressive-zupt', action='store_true',
+                       help='Use more aggressive ZUPT detection for better drift reduction')
+    parser.add_argument('--fast-convergence', action='store_true',
+                       help='Enable faster bias convergence (higher process noise)')
     parser.add_argument('--tcp-port', type=int, default=8888,
                        help='TCP port for state publishing')
     parser.add_argument('--websocket-port', type=int, default=8889,
@@ -920,6 +980,12 @@ def main():
         config['zupt_relaxed'] = True
     if args.coordinate_frame:
         config['coordinate_frame'] = args.coordinate_frame
+    if args.diagnostic:
+        config['diagnostic'] = True
+    if args.aggressive_zupt:
+        config['aggressive_zupt'] = True
+    if args.fast_convergence:
+        config['fast_convergence'] = True
     
     config['sample_rate'] = args.sample_rate
     config['tcp_port'] = args.tcp_port
