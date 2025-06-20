@@ -225,22 +225,28 @@ class MPU6050:
         # Read all sensor data in one burst
         data = self.driver.read_registers(self.ACCEL_XOUT_H, 14)
         
-        # Parse accelerometer data (big-endian)
+        # Parse accelerometer data (big-endian, two's complement)
+        def to_signed16(value):
+            """Convert unsigned 16-bit to signed 16-bit (two's complement)."""
+            if value > 32767:
+                return value - 65536
+            return value
+        
         accel_raw = np.array([
-            np.int16((data[0] << 8) | data[1]),
-            np.int16((data[2] << 8) | data[3]),
-            np.int16((data[4] << 8) | data[5])
+            to_signed16((data[0] << 8) | data[1]),
+            to_signed16((data[2] << 8) | data[3]),
+            to_signed16((data[4] << 8) | data[5])
         ], dtype=np.float64)
         
         # Parse temperature data
-        temp_raw = np.int16((data[6] << 8) | data[7])
+        temp_raw = to_signed16((data[6] << 8) | data[7])
         temperature = temp_raw / 340.0 + 36.53  # °C
         
-        # Parse gyroscope data (big-endian)
+        # Parse gyroscope data (big-endian, two's complement)
         gyro_raw = np.array([
-            np.int16((data[8] << 8) | data[9]),
-            np.int16((data[10] << 8) | data[11]),
-            np.int16((data[12] << 8) | data[13])
+            to_signed16((data[8] << 8) | data[9]),
+            to_signed16((data[10] << 8) | data[11]),
+            to_signed16((data[12] << 8) | data[13])
         ], dtype=np.float64)
         
         # Convert to SI units
@@ -357,11 +363,18 @@ class LSM303DLHC:
         # Read accelerometer data (auto-increment)
         data = self.accel_driver.read_registers(self.ACCEL_OUT_X_L_A | 0x80, 6)
         
+        # Helper function for two's complement conversion
+        def to_signed12(value):
+            """Convert unsigned 12-bit to signed 12-bit (two's complement)."""
+            if value > 2047:
+                return value - 4096
+            return value
+        
         # Parse data (little-endian, 12-bit left-justified in 16-bit)
         accel_raw = np.array([
-            np.int16((data[1] << 8) | data[0]) >> 4,
-            np.int16((data[3] << 8) | data[2]) >> 4,
-            np.int16((data[5] << 8) | data[4]) >> 4
+            to_signed12(((data[1] << 8) | data[0]) >> 4),
+            to_signed12(((data[3] << 8) | data[2]) >> 4),
+            to_signed12(((data[5] << 8) | data[4]) >> 4)
         ], dtype=np.float64)
         
         # Convert to SI units
@@ -389,11 +402,18 @@ class LSM303DLHC:
         # Read magnetometer data
         data = self.mag_driver.read_registers(self.MAG_OUT_X_H_M, 6)
         
+        # Helper function for two's complement conversion
+        def to_signed16(value):
+            """Convert unsigned 16-bit to signed 16-bit (two's complement)."""
+            if value > 32767:
+                return value - 65536
+            return value
+        
         # Parse data (big-endian)
         mag_raw = np.array([
-            np.int16((data[0] << 8) | data[1]),
-            np.int16((data[4] << 8) | data[5]),  # Note: Y and Z are swapped
-            np.int16((data[2] << 8) | data[3])
+            to_signed16((data[0] << 8) | data[1]),
+            to_signed16((data[4] << 8) | data[5]),  # Note: Y and Z are swapped
+            to_signed16((data[2] << 8) | data[3])
         ], dtype=np.float64)
         
         # Convert to Tesla
